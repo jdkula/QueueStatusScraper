@@ -1,7 +1,8 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
-from typing import Tuple, Union
+from typing import Any, Dict, Literal, Tuple, Union
+from pymongo.collection import ReturnDocument
 
 from pymongo.database import Database
 
@@ -9,6 +10,8 @@ from src.modals import Queue, EntryState, QueueState
 from src.scraper import QueueStatus
 
 import requests
+
+QueueDict = Dict[Literal["state", "entries", "chat", "servers"], Any]
 
 
 class EventType(Enum):
@@ -28,56 +31,101 @@ class QueueStatusMonitor:
         self._entries = self._db[f"queue_{queue_id}_entries"]
         self._events = self._db[f"queue_{queue_id}_events"]
         self._full_history = self._db[f"queue_{queue_id}_full_history"]
+        self._full_history2 = self._db[f"queue_{queue_id}_full_history2"]
 
         self._entries.create_index("content_hash")
 
-    def __process_update(self, old: Queue, new: Queue):
+    def __process_update(
+        self,
+        old: Union[Queue, QueueDict],
+        new: Union[Queue, QueueDict],
+        only_record_deltas=False,
+        at: Union[datetime, None] = None,
+    ):
         # On any change, add full copy to full history
-        new_d = dict(new)
-        new_d["timestamp"] = datetime.now()
-        self._full_history.update_one(
-            {
-                "chat": new_d["chat"],
-                "entries": new_d["entries"],
-                "state": new_d["state"],
-                "servers": new_d["servers"],
-            },
-            {"$setOnInsert": new_d},
-            upsert=True,
-        )
+        if isinstance(old, Queue):
+            old = dict(old)
+        if isinstance(new, Queue):
+            new = dict(new)
 
-        # Process updates for entries
-        for entry in new.entries:
-            entry_d = dict(entry)
-            if entry.id is None:
-                del entry_d["id"]  # never unset an id
+        if at is None:
+            at = datetime.utcnow()
 
-            # most values we want to keep immutable, except for–
-            entry_update = {"status": entry_d["status"], "server": entry_d["server"]}
-            del entry_d["status"]
-            del entry_d["server"]
-
-            self._entries.update_one(
-                {"content_hash": entry.content_hash},
-                {"$set": entry_update, "$setOnInsert": entry_d},
+        new["timestamp"] = at
+        if not only_record_deltas:
+            self._full_history.update_one(
+                {
+                    "chat": new["chat"],
+                    "entries": new["entries"],
+                    "state": new["state"],
+                    "servers": new["servers"],
+                },
+                {"$setOnInsert": new},
+                upsert=True,
+            )
+        else:
+            self._full_history2.update_one(
+                {
+                    "chat": new["chat"],
+                    "entries": new["entries"],
+                    "state": new["state"],
+                    "servers": new["servers"],
+                },
+                {"$setOnInsert": new},
                 upsert=True,
             )
 
-            # lock time_out once we set it
-            if entry.time_out is not None:
+        # Process updates for entries
+        for entry in new["entries"]:
+            if entry["id"] is None:
+                del entry["id"]  # never unset an id
+
+            # most values we want to keep immutable, except for–
+            entry_update = {"status": entry["status"], "server": entry["server"]}
+            del entry["status"]
+            del entry["server"]
+
+            old_entry = self._entries.find_one_and_update(
+                {"content_hash": entry["content_hash"]},
+                {"$set": entry_update, "$setOnInsert": entry},
+                upsert=True,
+                return_document=ReturnDocument.BEFORE,
+            )
+
+            # Edge detection
+            if (
+                old_entry
+                and old_entry["status"] != entry_update["status"]
+                and entry_update["status"] == EntryState.IN_PROGRESS.value
+            ):
+                # only order is waiting -> in_progress -> served
+                # just started serving this student
                 self._entries.update_one(
-                    {"content_hash": entry.content_hash, "time_out": None},
-                    {"$set": {"time_out": entry_d["time_out"]}},
+                    {"content_hash": entry["content_hash"]},
+                    {"$set": {"time_started": at}},
+                )
+
+            # lock time_out once we set it
+            if entry["time_out"] is not None:
+                self._entries.update_one(
+                    {"content_hash": entry["content_hash"], "time_out": None},
+                    {"$set": {"time_out": entry["time_out"]}},
                 )
 
         # When entries go away, mark ones that went away from in_progress as implicitly served
-        hashes = [entry.content_hash for entry in new.entries]
+        hashes = [entry["content_hash"] for entry in new["entries"]]
         self._entries.update_many(
             {
                 "status": EntryState.IN_PROGRESS.value,
                 "content_hash": {"$nin": hashes},
             },
-            {"$set": {"status": EntryState.SERVED.value, "implicitly": True}},
+            {
+                "$set": {
+                    "status": EntryState.SERVED.value,
+                    "implicitly": True,
+                    "time_out": at,
+                }
+            },
         )
         # ...and mark ones that went away from waiting as removed.
         self._entries.update_many(
@@ -89,13 +137,19 @@ class QueueStatusMonitor:
         )
 
         # Edge detection
-        if old.state == QueueState.CLOSED and new.state == QueueState.OPEN:
+        if (
+            old["state"] == QueueState.CLOSED.value
+            and new["state"] == QueueState.OPEN.value
+        ):
             self._events.insert_one(
-                {"event": EventType.QUEUE_OPEN.value, "timestamp": datetime.utcnow()}
+                {"event": EventType.QUEUE_OPEN.value, "timestamp": at}
             )
-        elif old.state == QueueState.OPEN and new.state == QueueState.CLOSED:
+        elif (
+            old["state"] == QueueState.OPEN.value
+            and new["state"] == QueueState.CLOSED.value
+        ):
             self._events.insert_one(
-                {"event": EventType.QUEUE_CLOSE.value, "timestamp": datetime.utcnow()}
+                {"event": EventType.QUEUE_CLOSE.value, "timestamp": at}
             )
 
     async def __init_qs(self):
@@ -142,3 +196,32 @@ class QueueStatusMonitor:
     async def monitor(self, interval: int = 10):
         await self.__init_qs()
         await self.__update_loop(interval)
+
+    async def backport_from_full_history(self):
+        self._events.delete_many({})
+        self._entries.delete_many({})
+        self._full_history2.delete_many({})
+        last = None
+        n = 0
+        print("Backporting queue information from full history...")
+        for querydict in self._full_history.find(sort=[("timestamp", 1)]):
+            n += 1
+            print(f"Processing entry {n}...", flush=True, end="\r")
+            if last is None:
+                last = querydict
+
+            for i in range(len(querydict["entries"])):
+                if querydict["entries"][i]["time_in"]:
+                    querydict["entries"][i]["time_in"] += timedelta(hours=8)
+                if querydict["entries"][i]["time_out"]:
+                    querydict["entries"][i]["time_out"] += timedelta(hours=8)
+
+            for i in range(len(querydict["chat"])):
+                querydict["chat"][i]["timestamp"] += timedelta(hours=8)
+
+            self.__process_update(
+                last, querydict, only_record_deltas=True, at=querydict["timestamp"]
+            )
+            last = querydict
+        print()
+        print("Done")

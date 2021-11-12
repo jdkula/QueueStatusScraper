@@ -63,8 +63,8 @@ class QueueStatus:
         # Entries
         entries = []
         for block in bs.select("div.queue-block"):
-            signup_time = nowify(
-                pacific.localize(
+            signup_time = pacific.localize(
+                nowify(
                     datetime.strptime(
                         block.select_one('div[title="Signup time"]').text.strip(),
                         "%I:%M %p",
@@ -84,8 +84,8 @@ class QueueStatus:
                 status = EntryState.IN_PROGRESS
             elif block.select_one(".served-block"):
                 status = EntryState.SERVED
-                time_out = nowify(
-                    pacific.localize(
+                time_out = pacific.localize(
+                    nowify(
                         datetime.strptime(
                             block.select_one('div[title="Served time"]').text.strip(),
                             "%I:%M %p",
