@@ -1,3 +1,6 @@
+"""
+Represents a full Queue
+"""
 from typing import List
 from enum import Enum
 
@@ -24,6 +27,7 @@ class Queue:
         self.state = state
 
     def __iter__(self):
+        # Allows this class to be turned into a dictionary -- for MongoDB
         yield ("state", self.state.value)
         yield ("entries", [dict(entry) for entry in self.entries])
         yield ("chat", [dict(chat) for chat in self.chat])

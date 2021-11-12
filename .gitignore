@@ -3,4 +3,4 @@
 **/.ipynb_checkpoints
 **/*.ipynb
 **/.env
-dump/
+dump*/

@@ -1,16 +1,21 @@
+"""
+Exposes a class that monitors QueueStatus for changes over time
+"""
 import asyncio
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Literal, Tuple, Union
-from pymongo.collection import ReturnDocument
+from typing import Any, Dict, Literal, Optional, Tuple, Union
 
+import requests
+import pytz
+from pymongo.collection import ReturnDocument
 from pymongo.database import Database
 
 from src.modals import Queue, EntryState, QueueState
-from src.scraper import QueueStatus
+from src.scraper import QueueStatusScraper
 
-import requests
 
+# Type of a Queue object when converted to a dictionary
 QueueDict = Dict[Literal["state", "entries", "chat", "servers"], Any]
 
 
@@ -21,8 +26,18 @@ class EventType(Enum):
 
 class QueueStatusMonitor:
     def __init__(
-        self, db: Database, queue_id: str, credentials: Union[Tuple[str, str], None]
+        self, db: Database, queue_id: str, credentials: Optional[Tuple[str, str]]
     ) -> None:
+        """
+        Initializes this monitor. Requires a MongoDB database to store information in,
+        a queue_id to monitor, and (optionally) credentials to view an elevated
+        version of the QueueStatus page.
+
+        Will create the following collections in the mongodb database:
+        queue_{queue_id}_entries
+        queue_{queue_id}_events
+        queue_{queue_id}_full_history
+        """
         self._client = requests.Session()
         self._db = db
         self._credentials = credentials
@@ -31,7 +46,6 @@ class QueueStatusMonitor:
         self._entries = self._db[f"queue_{queue_id}_entries"]
         self._events = self._db[f"queue_{queue_id}_events"]
         self._full_history = self._db[f"queue_{queue_id}_full_history"]
-        self._full_history2 = self._db[f"queue_{queue_id}_full_history2"]
 
         self._entries.create_index("content_hash")
 
@@ -42,29 +56,22 @@ class QueueStatusMonitor:
         only_record_deltas=False,
         at: Union[datetime, None] = None,
     ):
-        # On any change, add full copy to full history
+        # Use dictionary version so we can re-import from full history
+        # without re-loading everything into their modal types.
         if isinstance(old, Queue):
             old = dict(old)
         if isinstance(new, Queue):
             new = dict(new)
 
         if at is None:
-            at = datetime.utcnow()
+            # Lets us specify a different time upon re-import from full history
+            at = datetime.now(pytz.utc)
 
         new["timestamp"] = at
+
+        # On any change, add full copy to full history
         if not only_record_deltas:
             self._full_history.update_one(
-                {
-                    "chat": new["chat"],
-                    "entries": new["entries"],
-                    "state": new["state"],
-                    "servers": new["servers"],
-                },
-                {"$setOnInsert": new},
-                upsert=True,
-            )
-        else:
-            self._full_history2.update_one(
                 {
                     "chat": new["chat"],
                     "entries": new["entries"],
@@ -92,7 +99,7 @@ class QueueStatusMonitor:
                 return_document=ReturnDocument.BEFORE,
             )
 
-            # Edge detection
+            # Notice and record when a TA takes a student
             if (
                 old_entry
                 and old_entry["status"] != entry_update["status"]
@@ -136,7 +143,7 @@ class QueueStatusMonitor:
             {"$set": {"status": EntryState.REMOVED.value, "time_out": at}},
         )
 
-        # Edge detection
+        # Note when the queue opens/closes
         if (
             old["state"] == QueueState.CLOSED.value
             and new["state"] == QueueState.OPEN.value
@@ -153,18 +160,21 @@ class QueueStatusMonitor:
             )
 
     async def __init_qs(self):
-        self._qs = QueueStatus(self._client)
+        # Re-logs into QueueStatus
+        self._qs = QueueStatusScraper(self._client)
         if self._credentials:
             await self._qs.login(*self._credentials)
             self._last_login = datetime.now()
 
     async def __should_reinit(self):
+        # Checks if we've been logged out
         res = self._client.get(
             "https://queuestatus.com/users/any/edit", allow_redirects=False
         )
         return res.status_code == 302
 
     async def __update_loop(self, interval: int):
+        # Loop forever at a given interval
         last = await self._qs.get_queue(self._queue_id)
 
         while True:
@@ -194,13 +204,20 @@ class QueueStatusMonitor:
             await asyncio.sleep(interval)
 
     async def monitor(self, interval: int = 10):
+        """
+        Starts monitoring QueueStatus at the given interval
+        until externally cancelled (this method does not normally terminate)
+        """
         await self.__init_qs()
         await self.__update_loop(interval)
 
     async def backport_from_full_history(self):
+        """
+        Clears the events and entries collections and
+        re-calculates them by running back the full history log
+        """
         self._events.delete_many({})
         self._entries.delete_many({})
-        self._full_history2.delete_many({})
         last = None
         n = 0
         print("Backporting queue information from full history...")
@@ -209,15 +226,6 @@ class QueueStatusMonitor:
             print(f"Processing entry {n}...", flush=True, end="\r")
             if last is None:
                 last = querydict
-
-            for i in range(len(querydict["entries"])):
-                if querydict["entries"][i]["time_in"]:
-                    querydict["entries"][i]["time_in"] += timedelta(hours=8)
-                if querydict["entries"][i]["time_out"]:
-                    querydict["entries"][i]["time_out"] += timedelta(hours=8)
-
-            for i in range(len(querydict["chat"])):
-                querydict["chat"][i]["timestamp"] += timedelta(hours=8)
 
             self.__process_update(
                 last, querydict, only_record_deltas=True, at=querydict["timestamp"]

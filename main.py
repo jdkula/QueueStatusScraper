@@ -1,9 +1,25 @@
+"""
+Queue Status Scraper Tool
+==========================
+Periodically scrapes a QueueStatus queue and saves
+information to a MongoDB database.
+
+Configured using the following environment variables:
+    MONGODB_URL -- MongoDB connection URI
+    MONGODB_DB  -- MongoDB database name
+    EMAIL       -- QueueStatus email address
+    PASSWORD    -- QueueStatus password
+    QUEUE_ID    -- The ID of the queue to scrape
+    INTERVAL    -- How often to scrape in seconds
+    TIMEZONE    -- Which timezone QueueStatus is using
+"""
 import os
 import asyncio
-from src.monitor import QueueStatusMonitor
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from pymongo import MongoClient
+
+from src.monitor import QueueStatusMonitor
 
 
 async def main():
@@ -22,6 +38,7 @@ async def main():
         credentials = (email, password)
 
     monitor = QueueStatusMonitor(db, queue_id, credentials)
+    await monitor.backport_from_full_history()
     await monitor.monitor(interval=interval)
 
 
