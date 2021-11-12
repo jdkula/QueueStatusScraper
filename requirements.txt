@@ -3,3 +3,4 @@ beautifulsoup4
 pymongo[tls,srv]
 python-dotenv
 pytz
+tzlocal

@@ -38,7 +38,6 @@ async def main():
         credentials = (email, password)
 
     monitor = QueueStatusMonitor(db, queue_id, credentials)
-    await monitor.backport_from_full_history()
     await monitor.monitor(interval=interval)
 
 

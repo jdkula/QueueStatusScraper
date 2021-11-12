@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 import requests
 import pytz
+from tzlocal import get_localzone
 from bs4 import BeautifulSoup
 from requests.models import Response
 
@@ -14,7 +15,7 @@ from src.util import nowify, to_utc
 from src.modals import Queue, Server, Chat, Entry, EntryState, QueueState
 
 configured_tz = os.environ.get("TIMEZONE")
-localtz = pytz.timezone(configured_tz if configured_tz is not None else "US/Pacific")
+localtz = pytz.timezone(configured_tz if configured_tz is not None else get_localzone())
 
 
 class QueueStatusScraper:
