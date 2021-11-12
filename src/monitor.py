@@ -133,7 +133,7 @@ class QueueStatusMonitor:
                 "status": EntryState.WAITING.value,
                 "content_hash": {"$nin": hashes},
             },
-            {"$set": {"status": EntryState.REMOVED.value}},
+            {"$set": {"status": EntryState.REMOVED.value, "time_out": at}},
         )
 
         # Edge detection
