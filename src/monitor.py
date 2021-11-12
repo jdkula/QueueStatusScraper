@@ -91,11 +91,11 @@ class QueueStatusMonitor:
         # Edge detection
         if old.state == QueueState.CLOSED and new.state == QueueState.OPEN:
             self._events.insert_one(
-                {"event": EventType.QUEUE_OPEN, "timestamp": datetime.now()}
+                {"event": EventType.QUEUE_OPEN.value, "timestamp": datetime.now()}
             )
         elif old.state == QueueState.OPEN and new.state == QueueState.CLOSED:
             self._events.insert_one(
-                {"event": EventType.QUEUE_CLOSE, "timestamp": datetime.now()}
+                {"event": EventType.QUEUE_CLOSE.value, "timestamp": datetime.now()}
             )
 
     async def __init_qs(self):
