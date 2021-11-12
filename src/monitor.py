@@ -18,7 +18,7 @@ class EventType(Enum):
 
 class QueueStatusMonitor:
     def __init__(
-            self, db: Database, queue_id: str, credentials: Union[Tuple[str, str], None]
+        self, db: Database, queue_id: str, credentials: Union[Tuple[str, str], None]
     ) -> None:
         self._client = requests.Session()
         self._db = db
@@ -91,11 +91,11 @@ class QueueStatusMonitor:
         # Edge detection
         if old.state == QueueState.CLOSED and new.state == QueueState.OPEN:
             self._events.insert_one(
-                {"event": EventType.QUEUE_OPEN.value, "timestamp": datetime.now()}
+                {"event": EventType.QUEUE_OPEN.value, "timestamp": datetime.utcnow()}
             )
         elif old.state == QueueState.OPEN and new.state == QueueState.CLOSED:
             self._events.insert_one(
-                {"event": EventType.QUEUE_CLOSE.value, "timestamp": datetime.now()}
+                {"event": EventType.QUEUE_CLOSE.value, "timestamp": datetime.utcnow()}
             )
 
     async def __init_qs(self):
@@ -105,7 +105,9 @@ class QueueStatusMonitor:
             self._last_login = datetime.now()
 
     async def __should_reinit(self):
-        res = self._client.get("https://queuestatus.com/users/any/edit", allow_redirects=False)
+        res = self._client.get(
+            "https://queuestatus.com/users/any/edit", allow_redirects=False
+        )
         return res.status_code == 302
 
     async def __update_loop(self, interval: int):
@@ -123,7 +125,7 @@ class QueueStatusMonitor:
                     f"done",
                     flush=True,
                 )
-            
+
             print(f"[{datetime.now()}] Retrieving queue status... ", flush=True, end="")
 
             queue = await self._qs.get_queue(self._queue_id)
