@@ -3,7 +3,7 @@ Exposes a class that monitors QueueStatus for changes over time
 """
 import asyncio
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import Enum, Flag
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 import requests
@@ -169,39 +169,55 @@ class QueueStatusMonitor:
     async def __should_reinit(self):
         # Checks if we've been logged out
         res = self._client.get(
-            "https://queuestatus.com/users/any/edit", allow_redirects=False
+            "https://queuestatus.com/users/any/edit",
+            allow_redirects=False,
+            timeout=5,
         )
         return res.status_code == 302
 
     async def __update_loop(self, interval: int):
         # Loop forever at a given interval
         last = await self._qs.get_queue(self._queue_id)
+        reinit_next = False
 
         while True:
-            if await self.__should_reinit():
+            try:
+                if reinit_next or await self.__should_reinit():
+                    print(
+                        f"[{datetime.now()}] Re-logging into QueueStatus... ",
+                        flush=True,
+                        end="",
+                    )
+                    await self.__init_qs()
+                    print(
+                        f"done",
+                        flush=True,
+                    )
+                    reinit_next = False
+
                 print(
-                    f"[{datetime.now()}] Re-logging into QueueStatus... ",
+                    f"[{datetime.now()}] Retrieving queue status... ",
                     flush=True,
                     end="",
                 )
-                await self.__init_qs()
+
+                queue = await self._qs.get_queue(self._queue_id)
+                self.__process_update(last, queue)
+                last = queue
+
                 print(
-                    f"done",
+                    f"found with {len(queue.entries)} entries. Queue is {queue.state.name}.",
                     flush=True,
                 )
 
-            print(f"[{datetime.now()}] Retrieving queue status... ", flush=True, end="")
-
-            queue = await self._qs.get_queue(self._queue_id)
-            self.__process_update(last, queue)
-            last = queue
-
-            print(
-                f"found with {len(queue.entries)} entries. Queue is {queue.state.name}.",
-                flush=True,
-            )
-
-            await asyncio.sleep(interval)
+                await asyncio.sleep(interval)
+            except requests.exceptions.ReadTimeout:
+                print(
+                    "Failed to check login status in a timely manner, waiting 5 seconds then trying to log in again.",
+                    flush=True,
+                )
+                await asyncio.sleep(5)
+                reinit_next = True
 
     async def monitor(self, interval: int = 10):
         """

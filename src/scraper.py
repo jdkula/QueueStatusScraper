@@ -26,7 +26,7 @@ class QueueStatusScraper:
         """Logs into QueueStatus using the provided email and password"""
 
         # Retrieve CSRF token
-        res = self._session.get("https://queuestatus.com/")
+        res = self._session.get("https://queuestatus.com/", timeout=5)
         bs = BeautifulSoup(res.text, features="html.parser")
         csrf = bs.find("meta", {"name": "csrf-token"})["content"]
 
@@ -39,13 +39,16 @@ class QueueStatusScraper:
                 "X-CSRF-Token": csrf,
                 "X-Requested-With": "XMLHttpRequest",
             },
+            timeout=5,
         )
 
     async def get_queue(self, queue_id: str) -> Queue:
         """Given a queue id, scrape the website and pack it into a Queue instance"""
 
         # Retrieve the queue website and parse it
-        res = self._session.get(f"https://queuestatus.com/queues/{queue_id}/queue")
+        res = self._session.get(
+            f"https://queuestatus.com/queues/{queue_id}/queue", timeout=5
+        )
         bs = BeautifulSoup(res.text, features="html.parser")
 
         # Active servers
@@ -72,7 +75,9 @@ class QueueStatusScraper:
                     )
                 )
             )
-            if timestamp > datetime.now(pytz.utc):  # Handle case where the year changes over
+            if timestamp > datetime.now(
+                pytz.utc
+            ):  # Handle case where the year changes over
                 timestamp -= timedelta(years=1)
 
             chat.append(Chat(name_el.text.strip(), message_el.text.strip(), timestamp))
