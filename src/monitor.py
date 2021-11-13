@@ -101,9 +101,14 @@ class QueueStatusMonitor:
                 del entry["id"]  # never unset an id
 
             # most values we want to keep immutable, except for–
-            entry_update = {"status": entry["status"], "server": entry["server"], "time_out": entry["time_out"]}
+            entry_update = {
+                "status": entry["status"],
+                "server": entry["server"],
+                "time_out": entry["time_out"],
+            }
             del entry["status"]
             del entry["server"]
+            del entry["time_out"]
 
             # only update time_out when it is _not null_
             if not entry_update["time_out"]:

@@ -13,6 +13,7 @@ class QueueState(Enum):
     OPEN = "open"
     CLOSED = "closed"
 
+
 class Queue:
     def __init__(
         self,

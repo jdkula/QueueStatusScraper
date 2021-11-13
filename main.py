@@ -16,7 +16,6 @@ from src.monitor import QueueStatusMonitor
 from src.util import localtz
 
 
-
 async def main():
     interval = int(os.environ.get("INTERVAL"))
     email = os.environ.get("EMAIL")
