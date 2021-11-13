@@ -3,8 +3,10 @@ Provides utility functions used throughout the program
 """
 
 from datetime import datetime, timedelta
+import os
 
 import pytz
+from tzlocal import get_localzone
 
 def nowify(dt: datetime) -> datetime:
     """
@@ -23,3 +25,6 @@ def nowify(dt: datetime) -> datetime:
 
 def to_utc(dt: datetime) -> datetime:
     return dt.astimezone(pytz.utc)
+
+configured_tz = os.environ.get("TIMEZONE")
+localtz = pytz.timezone(configured_tz if configured_tz is not None else get_localzone())

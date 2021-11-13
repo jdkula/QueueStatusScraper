@@ -1,22 +1,16 @@
 """
 Implements a scraping class that maintains a 
 """
-import os
 from typing import Optional
 from datetime import datetime, timedelta
 
 import requests
 import pytz
-from tzlocal import get_localzone
 from bs4 import BeautifulSoup
 from requests.models import Response
 
-from src.util import nowify, to_utc
+from src.util import nowify, to_utc, localtz
 from src.modals import Queue, Server, Chat, Entry, EntryState, QueueState
-
-configured_tz = os.environ.get("TIMEZONE")
-localtz = pytz.timezone(configured_tz if configured_tz is not None else get_localzone())
-
 
 class QueueStatusScraper:
     def __init__(self, session: Optional[requests.Session]) -> None:

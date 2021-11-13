@@ -13,6 +13,7 @@ from pymongo.database import Database
 
 from src.modals import Queue, EntryState, QueueState
 from src.scraper import QueueStatusScraper
+from src.util import localtz
 
 
 # Type of a Queue object when converted to a dictionary
@@ -164,7 +165,6 @@ class QueueStatusMonitor:
         self._qs = QueueStatusScraper(self._client)
         if self._credentials:
             await self._qs.login(*self._credentials)
-            self._last_login = datetime.now()
 
     async def __should_reinit(self):
         # Checks if we've been logged out
@@ -184,7 +184,7 @@ class QueueStatusMonitor:
             try:
                 if reinit_next or await self.__should_reinit():
                     print(
-                        f"[{datetime.now()}] Re-logging into QueueStatus... ",
+                        f"[{datetime.now(localtz)}] Re-logging into QueueStatus... ",
                         flush=True,
                         end="",
                     )
@@ -196,7 +196,7 @@ class QueueStatusMonitor:
                     reinit_next = False
 
                 print(
-                    f"[{datetime.now()}] Retrieving queue status... ",
+                    f"[{datetime.now(localtz)}] Retrieving queue status... ",
                     flush=True,
                     end="",
                 )
