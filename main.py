@@ -15,16 +15,18 @@ Configured using the following environment variables:
 """
 import os
 import asyncio
+from datetime import datetime
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from prometheus_client import start_http_server
 
 from src.monitor import QueueStatusMonitor
+from src.util import localtz
+
 
 
 async def main():
-    queue_id = os.environ.get("QUEUE_ID")
     interval = int(os.environ.get("INTERVAL"))
     email = os.environ.get("EMAIL")
     password = os.environ.get("PASSWORD")
@@ -38,8 +40,22 @@ async def main():
     if email and password:
         credentials = (email, password)
 
-    monitor = QueueStatusMonitor(db, queue_id, credentials)
-    await monitor.monitor(interval=interval)
+    queue_ids = os.environ.get("QUEUE_IDS")
+    if not queue_ids:
+        queue_ids = os.environ.get("QUEUE_ID")
+
+    jobs = []
+
+    queue_ids = [id.strip() for id in queue_ids.split(",")]
+    for queue_id in queue_ids:
+        print(f"[{datetime.now(localtz)}] Starting monitor for queue id {queue_id}")
+        monitor = QueueStatusMonitor(db, queue_id, credentials)
+        jobs.append(monitor.monitor(interval=interval))
+
+        # Interleave the monitors so they don't all make requests at once.
+        await asyncio.sleep(interval / len(queue_ids))
+
+    await asyncio.gather(*jobs)
 
 
 if __name__ == "__main__":

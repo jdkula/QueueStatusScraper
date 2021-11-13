@@ -197,7 +197,7 @@ class QueueStatusMonitor:
                 start_time = datetime.now()
                 if reinit_next or await self.__should_reinit():
                     print(
-                        f"[{datetime.now(localtz)}] Re-logging into QueueStatus... ",
+                        f"[{datetime.now(localtz)}] ({self._queue_id}) Re-logging into QueueStatus... ",
                         flush=True,
                         end="",
                     )
@@ -209,7 +209,7 @@ class QueueStatusMonitor:
                     reinit_next = False
 
                 print(
-                    f"[{datetime.now(localtz)}] Retrieving queue status... ",
+                    f"[{datetime.now(localtz)}] ({self._queue_id}) Retrieving queue status... ",
                     flush=True,
                     end="",
                 )
@@ -231,7 +231,7 @@ class QueueStatusMonitor:
                 await asyncio.sleep(interval)
             except requests.exceptions.ReadTimeout:
                 print(
-                    "Failed to query QueueStatus in a timely manner, waiting 5 seconds then trying to log in again.",
+                    f"[{datetime.now(localtz)}] ({self._queue_id}) Failed to query QueueStatus in a timely manner, waiting 5 seconds then trying to log in again.",
                     flush=True,
                 )
                 REQUEST_FAILURE_COUNTER.labels(queue_id=self._queue_id).inc()
