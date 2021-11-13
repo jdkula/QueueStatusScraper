@@ -32,6 +32,7 @@ class Entry:
         self.image_url = image_url
         self.time_in = time_in
         self.time_out = time_out
+        self.time_started = None  # QueueStatus doesn't give this information :(
         self.server = server
         self.status = status
         self.questions = questions
@@ -43,14 +44,14 @@ class Entry:
             * the name and
             * the answer to each question and,
             * the sign-up *time*.
-        
+
         QueueStatus doesn't give a great unique ID so this will have to do.
         """
         h = hashlib.sha256()
         h.update(self.name.encode("utf8"))
         for (_, answer) in self.questions:
             h.update(answer.encode("utf8"))
-        
+
         # Only by time, since that's all we're technically given.
         h.update(self.time_in.strftime("%I:%M %p").encode("utf8"))
 
@@ -63,6 +64,7 @@ class Entry:
         yield ("image_url", self.image_url)
         yield ("time_in", self.time_in)
         yield ("time_out", self.time_out)
+        yield ("time_started", self.time_started)
         yield ("server", self.server)
         yield ("status", self.status.value)
         yield (

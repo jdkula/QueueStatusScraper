@@ -67,7 +67,7 @@ class QueueStatusMonitor:
         old: Union[Queue, QueueDict],
         new: Union[Queue, QueueDict],
         only_record_deltas=False,
-        at: Union[datetime, None] = None,
+        now: Union[datetime, None] = None,
     ):
         # Use dictionary version so we can re-import from full history
         # without re-loading everything into their modal types.
@@ -76,11 +76,11 @@ class QueueStatusMonitor:
         if isinstance(new, Queue):
             new = dict(new)
 
-        if at is None:
+        if now is None:
             # Lets us specify a different time upon re-import from full history
-            at = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
 
-        new["timestamp"] = at
+        new["timestamp"] = now
 
         # On any change, add full copy to full history
         if not only_record_deltas:
@@ -101,9 +101,13 @@ class QueueStatusMonitor:
                 del entry["id"]  # never unset an id
 
             # most values we want to keep immutable, except for–
-            entry_update = {"status": entry["status"], "server": entry["server"]}
+            entry_update = {"status": entry["status"], "server": entry["server"], "time_out": entry["time_out"]}
             del entry["status"]
             del entry["server"]
+
+            # only update time_out when it is _not null_
+            if not entry_update["time_out"]:
+                del entry_update["time_out"]
 
             old_entry = self._entries.find_one_and_update(
                 {"content_hash": entry["content_hash"]},
@@ -122,14 +126,7 @@ class QueueStatusMonitor:
                 # just started serving this student
                 self._entries.update_one(
                     {"content_hash": entry["content_hash"]},
-                    {"$set": {"time_started": at}},
-                )
-
-            # lock time_out once we set it
-            if entry["time_out"] is not None:
-                self._entries.update_one(
-                    {"content_hash": entry["content_hash"], "time_out": None},
-                    {"$set": {"time_out": entry["time_out"]}},
+                    {"$set": {"time_started": now}},
                 )
 
         # When entries go away, mark ones that went away from in_progress as implicitly served
@@ -143,7 +140,7 @@ class QueueStatusMonitor:
                 "$set": {
                     "status": EntryState.SERVED.value,
                     "implicitly": True,
-                    "time_out": at,
+                    "time_out": now,
                 }
             },
         )
@@ -153,7 +150,7 @@ class QueueStatusMonitor:
                 "status": EntryState.WAITING.value,
                 "content_hash": {"$nin": hashes},
             },
-            {"$set": {"status": EntryState.REMOVED.value, "time_out": at}},
+            {"$set": {"status": EntryState.REMOVED.value, "time_out": now}},
         )
 
         # Note when the queue opens/closes
@@ -162,14 +159,14 @@ class QueueStatusMonitor:
             and new["state"] == QueueState.OPEN.value
         ):
             self._events.insert_one(
-                {"event": EventType.QUEUE_OPEN.value, "timestamp": at}
+                {"event": EventType.QUEUE_OPEN.value, "timestamp": now}
             )
         elif (
             old["state"] == QueueState.OPEN.value
             and new["state"] == QueueState.CLOSED.value
         ):
             self._events.insert_one(
-                {"event": EventType.QUEUE_CLOSE.value, "timestamp": at}
+                {"event": EventType.QUEUE_CLOSE.value, "timestamp": now}
             )
 
     async def __init_qs(self):
@@ -263,7 +260,7 @@ class QueueStatusMonitor:
                 last = querydict
 
             self.__process_update(
-                last, querydict, only_record_deltas=True, at=querydict["timestamp"]
+                last, querydict, only_record_deltas=True, now=querydict["timestamp"]
             )
             last = querydict
         print()
