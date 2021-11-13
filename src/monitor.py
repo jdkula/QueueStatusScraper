@@ -182,6 +182,7 @@ class QueueStatusMonitor:
 
         while True:
             try:
+                start_time = datetime.now()
                 if reinit_next or await self.__should_reinit():
                     print(
                         f"[{datetime.now(localtz)}] Re-logging into QueueStatus... ",
@@ -205,8 +206,9 @@ class QueueStatusMonitor:
                 self.__process_update(last, queue)
                 last = queue
 
+                duration = datetime.now() - start_time
                 print(
-                    f"found with {len(queue.entries)} entries. Queue is {queue.state.name}.",
+                    f"found with {len(queue.entries)} entries. Queue is {queue.state.name}. Took {duration} to complete.",
                     flush=True,
                 )
 
