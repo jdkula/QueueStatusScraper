@@ -215,7 +215,7 @@ class QueueStatusMonitor:
                 await asyncio.sleep(interval)
             except requests.exceptions.ReadTimeout:
                 print(
-                    "Failed to check login status in a timely manner, waiting 5 seconds then trying to log in again.",
+                    "Failed to query QueueStatus in a timely manner, waiting 5 seconds then trying to log in again.",
                     flush=True,
                 )
                 await asyncio.sleep(5)
