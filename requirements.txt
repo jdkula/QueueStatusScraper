@@ -2,5 +2,5 @@ requests
 beautifulsoup4
 pymongo[tls,srv]
 python-dotenv
-pytz
 tzlocal
+prometheus_client

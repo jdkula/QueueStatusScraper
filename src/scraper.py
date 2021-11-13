@@ -2,15 +2,15 @@
 Implements a scraping class that maintains a 
 """
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
-import pytz
 from bs4 import BeautifulSoup
 from requests.models import Response
 
 from src.util import nowify, to_utc, localtz
 from src.modals import Queue, Server, Chat, Entry, EntryState, QueueState
+
 
 class QueueStatusScraper:
     def __init__(self, session: Optional[requests.Session]) -> None:
@@ -63,14 +63,12 @@ class QueueStatusScraper:
 
             # Timestamp are in local time in the format MMM DD, 12:MM pm
             timestamp = to_utc(
-                localtz.localize(
-                    datetime.strptime(time_el.text.strip(), "%b %d, %I:%M %p").replace(
-                        year=datetime.now().year
-                    )
+                datetime.strptime(time_el.text.strip(), "%b %d, %I:%M %p").replace(
+                    year=datetime.now().year, tzinfo=localtz
                 )
             )
             if timestamp > datetime.now(
-                pytz.utc
+                timezone.utc
             ):  # Handle case where the year changes over
                 timestamp -= timedelta(years=1)
 
@@ -87,14 +85,12 @@ class QueueStatusScraper:
         entries = []
         for block in bs.select("div.queue-block"):
             signup_time = to_utc(
-                localtz.localize(
-                    nowify(
-                        datetime.strptime(
-                            block.select_one('div[title="Signup time"]').text.strip(),
-                            "%I:%M %p",
-                        )
+                nowify(
+                    datetime.strptime(
+                        block.select_one('div[title="Signup time"]').text.strip(),
+                        "%I:%M %p",
                     )
-                )
+                ).replace(tzinfo=localtz)
             )
 
             # Grab questions/answers students type in
@@ -116,17 +112,13 @@ class QueueStatusScraper:
             elif block.select_one(".served-block"):
                 # This class only present if they've been served
                 status = EntryState.SERVED
-                time_out = to_utc(
-                    localtz.localize(  # Only present once done serving
-                        nowify(
-                            datetime.strptime(
-                                block.select_one(
-                                    'div[title="Served time"]'
-                                ).text.strip(),
-                                "%I:%M %p",
-                            )
+                time_out = to_utc(  # Only present once done serving
+                    nowify(
+                        datetime.strptime(
+                            block.select_one('div[title="Served time"]').text.strip(),
+                            "%I:%M %p",
                         )
-                    )
+                    ).replace(tzinfo=localtz)
                 )
 
             if status != EntryState.WAITING:

@@ -18,6 +18,7 @@ import asyncio
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
+from prometheus_client import start_http_server
 
 from src.monitor import QueueStatusMonitor
 
@@ -43,4 +44,5 @@ async def main():
 
 if __name__ == "__main__":
     load_dotenv()
+    start_http_server(8000)
     asyncio.run(main())

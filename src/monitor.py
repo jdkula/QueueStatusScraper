@@ -2,14 +2,14 @@
 Exposes a class that monitors QueueStatus for changes over time
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum, Flag
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 import requests
-import pytz
 from pymongo.collection import ReturnDocument
 from pymongo.database import Database
+from prometheus_client import Histogram, Counter
 
 from src.modals import Queue, EntryState, QueueState
 from src.scraper import QueueStatusScraper
@@ -18,6 +18,18 @@ from src.util import localtz
 
 # Type of a Queue object when converted to a dictionary
 QueueDict = Dict[Literal["state", "entries", "chat", "servers"], Any]
+
+REQUEST_FAILURE_COUNTER = Counter(
+    "request_failures", "Number of times a request failed", labelnames=("queue_id",)
+)
+REQUEST_SUCCESS_COUNTER = Counter(
+    "requests", "Number of times a request succeeded", labelnames=("queue_id",)
+)
+SCRAPE_LENGTH = Histogram(
+    "scrape_length",
+    "Times to finish processing one scrape iteration (ms)",
+    labelnames=("queue_id",),
+)
 
 
 class EventType(Enum):
@@ -66,7 +78,7 @@ class QueueStatusMonitor:
 
         if at is None:
             # Lets us specify a different time upon re-import from full history
-            at = datetime.now(pytz.utc)
+            at = datetime.now(timezone.utc)
 
         new["timestamp"] = at
 
@@ -211,6 +223,10 @@ class QueueStatusMonitor:
                     f"found with {len(queue.entries)} entries. Queue is {queue.state.name}. Took {duration} to complete.",
                     flush=True,
                 )
+                REQUEST_SUCCESS_COUNTER.labels(queue_id=self._queue_id).inc()
+                SCRAPE_LENGTH.labels(queue_id=self._queue_id).observe(
+                    duration.total_seconds()
+                )
 
                 await asyncio.sleep(interval)
             except requests.exceptions.ReadTimeout:
@@ -218,6 +234,7 @@ class QueueStatusMonitor:
                     "Failed to query QueueStatus in a timely manner, waiting 5 seconds then trying to log in again.",
                     flush=True,
                 )
+                REQUEST_FAILURE_COUNTER.labels(queue_id=self._queue_id).inc()
                 await asyncio.sleep(5)
                 reinit_next = True
 

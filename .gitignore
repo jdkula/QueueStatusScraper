@@ -3,3 +3,5 @@
 **/*.ipynb
 **/.env
 dump*/
+**/__pycache__
+**/*.pyc
