@@ -104,15 +104,9 @@ class QueueStatusMonitor:
             entry_update = {
                 "status": entry["status"],
                 "server": entry["server"],
-                "time_out": entry["time_out"],
             }
             del entry["status"]
             del entry["server"]
-            del entry["time_out"]
-
-            # only update time_out when it is _not null_
-            if not entry_update["time_out"]:
-                del entry_update["time_out"]
 
             old_entry = self._entries.find_one_and_update(
                 {"content_hash": entry["content_hash"]},
@@ -133,6 +127,13 @@ class QueueStatusMonitor:
                     {"content_hash": entry["content_hash"]},
                     {"$set": {"time_started": now}},
                 )
+
+            # Only update time_out if it wasn't already set
+            # (because we always assume time_out is for "today" which may not be the case for stale served entries)
+            self._entries.update_one(
+                {"content_hash": entry["content_hash"], "time_out": None},
+                {"$set": {"time_out": entry["time_out"]}},
+            )
 
         # When entries go away, mark ones that went away from in_progress as implicitly served
         hashes = [entry["content_hash"] for entry in new["entries"]]
