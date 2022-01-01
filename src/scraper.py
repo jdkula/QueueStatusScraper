@@ -70,7 +70,7 @@ class QueueStatusScraper:
             if timestamp > datetime.now(
                 timezone.utc
             ):  # Handle case where the year changes over
-                timestamp -= timedelta(years=1)
+                timestamp -= timedelta(days=365)
 
             chat.append(Chat(name_el.text.strip(), message_el.text.strip(), timestamp))
 
